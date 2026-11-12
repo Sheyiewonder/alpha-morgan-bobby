@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum CustomerSegment {
+  RETAIL
+  SME
+  COMMERCIAL
+  CORPORATE
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  AGENT
+}
+
+enum ComplaintStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TransactionStatus {
+  SUCCESSFUL
+  PENDING
+  FAILED
+  REVERSED
+  UNKNOWN
+}
+
+enum EscalationStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+}
+
+model Customer {
+  id          String          @id @default(uuid())
+  customerRef String          @unique
+  firstName   String
+  lastName    String
+  email       String?         @unique
+  phone       String?         @unique
+  segment     CustomerSegment @default(RETAIL)
+
+  conversations Conversation[]
+  complaints    Complaint[]
+  transactions  Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([segment])
+}
+
+model Conversation {
+  id         String  @id @default(uuid())
+  customerId String?
+  title      String?
+  channel    String  @default("WEB")
+  isResolved Boolean @default(false)
+
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  messages    Message[]
+  escalations Escalation[]
+  complaints  Complaint[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([createdAt])
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  role           MessageRole
+  content        String      @db.Text
+  metadata       Json?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Complaint {
+  id             String            @id @default(uuid())
+  reference      String            @unique
+  customerId     String
+  transactionId  String?           @unique
+  conversationId String?           @unique
+  subject        String
+  description    String            @db.Text
+  category       String
+  priority       ComplaintPriority @default(MEDIUM)
+  status         ComplaintStatus   @default(OPEN)
+
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  transaction  Transaction?  @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status, priority])
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  customerId      String
+  reference       String            @unique
+  description     String
+  amount          Decimal           @db.Decimal(18, 2)
+  currency        String            @default("NGN")
+  status          TransactionStatus @default(UNKNOWN)
+  type            String
+  counterparty    String?
+  transactionDate DateTime
+
+  customer  Customer   @relation(fields: [customerId], references: [id])
+  complaint Complaint?
+
+  createdAt DateTime @default(now())
+
+  @@index([customerId, transactionDate])
+  @@index([status])
+}
+
+model KnowledgeDocument {
+  id         String                      @id @default(uuid())
+  title      String
+  category   String
+  content    String                      @db.Text
+  source     String?
+  isApproved Boolean                     @default(false)
+  version    Int                         @default(1)
+  embedding  Unsupported("vector(384)")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category, isApproved])
+}
+
+model Escalation {
+  id             String           @id @default(uuid())
+  conversationId String
+  reason         String
+  status         EscalationStatus @default(PENDING)
+  assignedTo     String?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+}

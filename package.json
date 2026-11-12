@@ -1,0 +1,16 @@
+{
+  "name": "alpha-morgan-bobby",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=@alpha-morgan-bobby/api\" \"npm run dev --workspace=@alpha-morgan-bobby/web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "dotenv-cli": "^11.1.0"
+  }
+}
