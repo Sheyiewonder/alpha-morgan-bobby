@@ -277,7 +277,7 @@ const demoRoutes: FastifyPluginAsync = async (app) => {
             data: {
               reference,
               customerId: customer.id,
-              transactionId: transaction?.id,
+              transactionId: transaction?.id ?? null,
               conversationId: conversation.id,
               subject: categorySubjects[category],
               description: complaintDescription,
