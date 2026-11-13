@@ -442,6 +442,45 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
         }
 
         // 3. Handle ordinary conversation without knowledge retrieval.
+                // 3. If a human support escalation is active,
+        // save the customer's message without generating a Bobby response.
+        const activeEscalation = await prisma.escalation.findFirst({
+          where: {
+            conversationId: conversation.id,
+            status: {
+              in: ["PENDING", "ASSIGNED", "IN_PROGRESS"],
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          select: {
+            id: true,
+            status: true,
+            assignedTo: true,
+          },
+        });
+
+        if (activeEscalation) {
+          request.log.info(
+            {
+              conversationId: conversation.id,
+              escalationId: activeEscalation.id,
+              escalationStatus: activeEscalation.status,
+            },
+            "Bobby response skipped because human support is handling the conversation"
+          );
+
+          return reply.code(201).send({
+            success: true,
+            userMessage,
+            assistantMessage: null,
+            handoffActive: true,
+            escalation: activeEscalation,
+            sources: [],
+          });
+        }
+        
         if (isConversationalMessage(content)) {
 
           const answer = await generateConversationalResponse(content);
