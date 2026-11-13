@@ -153,7 +153,7 @@ export default function AdminShell({
                 className="group flex shrink-0 items-center"
             >
                 <NextImage
-                src="/images/AMB%20logo.png"
+                src="/images/AMB logo.PNG"
                 alt="Alpha Morgan Bank"
                 width={932}
                 height={350}
