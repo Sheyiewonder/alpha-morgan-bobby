@@ -431,7 +431,7 @@ export default function DashboardPage() {
             className="group flex shrink-0 items-center"
           >
             <NextImage
-              src="/images/amb logo.png"
+              src="/images/AMB%20logo.png"
               alt="Alpha Morgan Bank"
               width={932}
               height={350}
