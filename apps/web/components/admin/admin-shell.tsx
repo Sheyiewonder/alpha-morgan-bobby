@@ -14,6 +14,7 @@ import {
   Headset,
   Menu,
 } from "lucide-react";
+import HandoffNotifications from "./handoff-notifications";
 
 const navigation = [
   { label: "Overview", href: "/admin", icon: LayoutDashboard },
@@ -164,6 +165,8 @@ export default function AdminShell({
           {children}
         </main>
       </div>
+
+      <HandoffNotifications />
     </div>
   );
 }

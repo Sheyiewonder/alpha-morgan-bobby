@@ -228,24 +228,97 @@ async function backfillHistoricalHandoffs() {
 }
 
 const humanHandoffRoutes: FastifyPluginAsync = async (app) => {
-  // Automatically backfill historical records when the API starts.
-  try {
-    const result = await backfillHistoricalHandoffs();
+   // Run historical backfill in the background.
+  // Do not block Fastify route registration while it runs.
+  void backfillHistoricalHandoffs()
+    .then((result) => {
+      app.log.info(
+        {
+          created: result.created,
+          skipped: result.skipped,
+          checked: result.checked,
+        },
+        "Historical human handoff backfill completed"
+      );
+    })
+    .catch((error) => {
+      app.log.error(
+        error,
+        "Historical human handoff backfill failed"
+      );
+    });
 
-    app.log.info(
-      {
-        created: result.created,
-        skipped: result.skipped,
-        checked: result.checked,
+
+  // GET /api/human-handoffs/notifications
+  // Dashboard counts and recent handoffs awaiting a representative response.
+  app.get("/human-handoffs/notifications", async (_request, reply) => {
+    const [unattendedCount, activeHandoffs] = await Promise.all([
+      prisma.humanHandoff.count({
+        where: {
+          status: "PENDING",
+          assignedTo: null,
+        },
+      }),
+
+      prisma.humanHandoff.findMany({
+        where: {
+          status: {
+            in: [...ACTIVE_HANDOFF_STATUSES],
+          },
+        },
+        orderBy: {
+          updatedAt: "desc",
+        },
+        select: {
+          id: true,
+          status: true,
+          source: true,
+          reason: true,
+          assignedTo: true,
+          updatedAt: true,
+          conversation: {
+            select: {
+              id: true,
+              title: true,
+              customer: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              messages: {
+                orderBy: {
+                  createdAt: "desc",
+                },
+                take: 1,
+                select: {
+                  id: true,
+                  role: true,
+                  content: true,
+                  createdAt: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    // A handoff needs a response when its latest message is from the customer.
+    const awaitingResponse = activeHandoffs.filter(
+      (handoff) => handoff.conversation.messages[0]?.role === "USER"
+    );
+
+    return reply.send({
+      success: true,
+      counts: {
+        unattended: unattendedCount,
+        newMessages: awaitingResponse.length,
       },
-      "Historical human handoff backfill completed"
-    );
-  } catch (error) {
-    app.log.error(
-      error,
-      "Historical human handoff backfill failed"
-    );
-  }
+      notifications: awaitingResponse.slice(0, 8),
+      checkedAt: new Date().toISOString(),
+    });
+  });
 
   // GET /api/human-handoffs
   // List and filter human handoffs.
