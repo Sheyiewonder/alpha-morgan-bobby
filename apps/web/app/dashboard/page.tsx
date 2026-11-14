@@ -1,9 +1,32 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Hand } from "lucide-react";
 import NextImage from "next/image";
+import {
+  Hand,
+  House,
+  ArrowLeftRight,
+  Headset,
+  UserRound,
+  ArrowUpRight,
+  Smartphone,
+  ReceiptText,
+  CircleDollarSign,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  MessageCircle,
+  AlertCircle,
+  RefreshCw,
+  X,
+  Share2,
+  ArrowRight,
+  FileCheck2,
+  Send,
+  type LucideIcon,
+} from "lucide-react";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -73,6 +96,12 @@ type ComplaintResult = {
   existingComplaint?: ComplaintRecord;
 };
 
+type ConversationHistoryItem = {
+  id: string;
+  title: string;
+  updatedAt: string;
+};
+
 const categories: { value: ComplaintCategory; label: string }[] = [
   { value: "FAILED_TRANSACTION", label: "Failed transaction" },
   { value: "INCORRECT_TRANSACTION", label: "Incorrect transaction" },
@@ -80,11 +109,15 @@ const categories: { value: ComplaintCategory; label: string }[] = [
   { value: "OTHER", label: "Other banking issue" },
 ];
 
-const navigation = [
-  { label: "Home", icon: "⌂", href: "#top" },
-  { label: "Transactions", icon: "⇄", href: "#transactions" },
-  { label: "Support", icon: "◉", href: "#support" },
-  { label: "Profile", icon: "◎", href: "#profile" },
+const navigation: {
+  label: string;
+  icon: LucideIcon;
+  href: string;
+}[] = [
+  { label: "Home", icon: House, href: "#top" },
+  { label: "Transactions", icon: ArrowLeftRight, href: "#transactions" },
+  { label: "Support", icon: Headset, href: "#support"},
+  { label: "Profile", icon: UserRound, href: "#profile" },
 ];
 
 function formatMoney(amount: string, currency = "NGN") {
@@ -134,16 +167,16 @@ function getDefaultCategory(status: string): ComplaintCategory {
   return status === "FAILED" ? "FAILED_TRANSACTION" : "OTHER";
 }
 
-function transactionIcon(type: string) {
+function transactionIcon(type: string): LucideIcon {
   switch (type) {
     case "TRANSFER":
-      return "↗";
+      return ArrowUpRight;
     case "AIRTIME":
-      return "▤";
+      return Smartphone;
     case "BILL_PAYMENT":
-      return "▣";
+      return ReceiptText;
     default:
-      return "◈";
+      return CircleDollarSign;
   }
 }
 
@@ -165,8 +198,14 @@ export default function DashboardPage() {
   const [complaintResult, setComplaintResult] =
     useState<ComplaintResult | null>(null);
 
+  const [savedConversations, setSavedConversations] = useState<
+    ConversationHistoryItem[]
+  >([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  
   const [activeTab, setActiveTab] = useState("Home");
   const [shareMessage, setShareMessage] = useState("");
+  const [supportOpen, setSupportOpen] = useState(false);
 
   // A silent refresh updates the data without replacing the dashboard
   // with a loading screen or closing an open modal.
@@ -353,6 +392,46 @@ export default function DashboardPage() {
     }
   }
 
+    const loadConversationHistory = useCallback(() => {
+    setLoadingConversations(true);
+
+    try {
+      const stored = localStorage.getItem("bobby_conversation_history");
+
+      if (!stored) {
+        setSavedConversations([]);
+        return;
+      }
+
+      const parsed = JSON.parse(stored);
+
+      if (!Array.isArray(parsed)) {
+        setSavedConversations([]);
+        return;
+      }
+
+      const conversations = parsed
+        .filter(
+          (item): item is ConversationHistoryItem =>
+            typeof item?.id === "string" &&
+            typeof item?.title === "string" &&
+            typeof item?.updatedAt === "string",
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() -
+            new Date(a.updatedAt).getTime(),
+        )
+        .slice(0, 30);
+
+      setSavedConversations(conversations);
+    } catch (error) {
+      console.error("Unable to load Bobby conversation history:", error);
+      setSavedConversations([]);
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, []);
   function continueWithBobby(conversationId: string | null | undefined) {
     if (!conversationId) {
       setComplaintError(
@@ -377,7 +456,10 @@ export default function DashboardPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F6F7F9] px-6">
         <div className="animate-fade-up text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-[#EC5424]/15 border-t-[#EC5424]" />
+          <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center">
+            <RefreshCw className="h-8 w-8 animate-spin text-[#EC5424]" />
+          </div>
+
           <p className="text-sm font-medium text-gray-500">
             Loading your demo dashboard...
           </p>
@@ -390,8 +472,8 @@ export default function DashboardPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F6F7F9] px-6">
         <div className="w-full max-w-md animate-fade-up rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl font-bold text-red-600">
-            !
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <AlertCircle className="h-6 w-6" />
           </div>
 
           <h1 className="text-xl font-bold text-[#141A1C]">
@@ -405,8 +487,9 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => void loadCustomer()}
-            className="mt-6 rounded-xl bg-[#EC5424] px-5 py-3 text-sm font-bold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/20 active:translate-y-0"
+            className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-[#EC5424] px-5 py-3 text-sm font-bold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/20 active:translate-y-0"
           >
+            <RefreshCw className="h-4 w-4" />
             Try again
           </button>
         </div>
@@ -441,12 +524,18 @@ export default function DashboardPage() {
           </Link>
 
           <div className="flex items-center gap-2.5 sm:gap-3">
-            <Link
-              href="/"
-              className="hidden rounded-xl bg-[#FFF0E9] px-4 py-2.5 text-xs font-bold text-[#EC5424] transition duration-200 hover:-translate-y-0.5 hover:bg-[#FCE1D6] sm:inline-flex"
+            <button
+              type="button"
+              onClick={() => {
+                loadConversationHistory();
+                setSupportOpen(true);
+              }}
+              aria-label="Open support centre"
+              title="Support centre"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF0E9] text-[#EC5424] transition duration-200 hover:-translate-y-0.5 hover:bg-[#FCE1D6] hover:shadow-md hover:shadow-[#EC5424]/10 active:translate-y-0"
             >
-              Chat with Bobby
-            </Link>
+              <Headset className="h-5 w-5" strokeWidth={2.2} />
+            </button>
 
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#FFF0E9] to-[#FCE1D6] text-sm font-extrabold text-[#EC5424] ring-1 ring-[#EC5424]/10">
               {data.customer.firstName.charAt(0)}
@@ -523,7 +612,7 @@ export default function DashboardPage() {
 
                   <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-[9px] font-bold tracking-[0.16em] text-white/95 shadow-sm backdrop-blur-md">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
-                    SIMULATED
+                    CURRENT
                   </span>
                 </div>
 
@@ -557,8 +646,8 @@ export default function DashboardPage() {
           {/* Overview cards */}
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-orange-100 hover:shadow-lg hover:shadow-gray-200/60 sm:p-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-lg text-[#EC5424]">
-                ↗
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-[#EC5424]">
+                <ArrowLeftRight className="h-5 w-5" />
               </div>
               <p className="mt-5 text-2xl font-extrabold sm:text-3xl">
                 {transactions.length}
@@ -567,8 +656,8 @@ export default function DashboardPage() {
             </div>
 
             <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-emerald-100 hover:shadow-lg hover:shadow-gray-200/60 sm:p-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-lg text-emerald-700">
-                ✓
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-700">
+                <CheckCircle2 className="h-5 w-5" />
               </div>
               <p className="mt-5 text-2xl font-extrabold sm:text-3xl">
                 {successfulCount}
@@ -578,8 +667,8 @@ export default function DashboardPage() {
 
             <div className="col-span-2 rounded-3xl border border-gray-100 bg-gradient-to-br from-white to-[#FFF9F6] p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-gray-200/60 sm:p-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FFF0E9] to-[#FCE1D6] text-xl font-extrabold text-[#EC5424]">
-                  B
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FFF0E9] to-[#FCE1D6] text-[#EC5424]">
+                  <MessageCircle className="h-5 w-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -590,10 +679,11 @@ export default function DashboardPage() {
                 </div>
 
                 <Link
-                  href="/"
-                  className="shrink-0 rounded-xl bg-[#EC5424] px-3 py-2.5 text-xs font-bold text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-md active:translate-y-0"
+                  href="/?newChat=1"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#EC5424] px-3 py-2.5 text-xs font-bold text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-md active:translate-y-0"
                 >
                   Chat now
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
             </div>
@@ -630,6 +720,7 @@ export default function DashboardPage() {
             ) : (
               transactions.map((transaction) => {
                 const alreadyReported = Boolean(transaction.complaint);
+                const TransactionIcon = transactionIcon(transaction.type);
 
                 return (
                   <article
@@ -639,7 +730,7 @@ export default function DashboardPage() {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg transition duration-300 hover:scale-105 ${
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition duration-300 hover:scale-105 ${
                             transaction.status === "FAILED"
                               ? "bg-red-50 text-red-600"
                               : transaction.status === "SUCCESSFUL"
@@ -647,7 +738,7 @@ export default function DashboardPage() {
                                 : "bg-orange-50 text-[#EC5424]"
                           }`}
                         >
-                          {transactionIcon(transaction.type)}
+                          <TransactionIcon className="h-5 w-5" />
                         </div>
 
                         <div className="min-w-0 flex-1">
@@ -687,8 +778,9 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => setSelectedTransaction(transaction)}
-                          className="flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-700 transition duration-200 hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC5424]/30 sm:flex-none"
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-700 transition duration-200 hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC5424]/30 sm:flex-none"
                         >
+                          <ReceiptText className="h-3.5 w-3.5" />
                           View Receipt
                         </button>
 
@@ -696,16 +788,18 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => setSelectedTransaction(transaction)}
-                            className="flex-1 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700 transition duration-200 hover:bg-emerald-100 active:scale-[0.98] sm:flex-none"
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700 transition duration-200 hover:bg-emerald-100 active:scale-[0.98] sm:flex-none"
                           >
+                            <FileCheck2 className="h-3.5 w-3.5" />
                             Reported · View ticket
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => openReport(transaction)}
-                            className="flex-1 rounded-xl bg-[#EC5424] px-3 py-2.5 text-xs font-bold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-md hover:shadow-[#EC5424]/15 active:translate-y-0 sm:flex-none"
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#EC5424] px-3 py-2.5 text-xs font-bold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-md hover:shadow-[#EC5424]/15 active:translate-y-0 sm:flex-none"
                           >
+                            <Send className="h-3.5 w-3.5" />
                             Report Transaction
                           </button>
                         )}
@@ -738,7 +832,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Support summary */}
-        <section id="support" className="mt-8 scroll-mt-24">
+        {/* <section id="support" className="mt-8 scroll-mt-24">
           <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -767,6 +861,10 @@ export default function DashboardPage() {
 
             {reportedCount === 0 ? (
               <div className="mt-6 rounded-2xl bg-gray-50 px-5 py-8 text-center">
+                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm">
+                  <FileCheck2 className="h-5 w-5" />
+                </div>
+
                 <p className="text-sm font-semibold text-gray-700">
                   No transaction reports yet
                 </p>
@@ -808,8 +906,9 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => setSelectedTransaction(transaction)}
-                          className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
                         >
+                          <ReceiptText className="h-3.5 w-3.5" />
                           View details
                         </button>
 
@@ -821,9 +920,11 @@ export default function DashboardPage() {
                                 transaction.complaint!.conversationId,
                               )
                             }
-                            className="rounded-xl bg-[#EC5424] px-3 py-2 text-xs font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#d9471b] active:translate-y-0"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-[#EC5424] px-3 py-2 text-xs font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#d9471b] active:translate-y-0"
                           >
+                            <MessageCircle className="h-3.5 w-3.5" />
                             Continue with Bobby
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -841,36 +942,61 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-        </section>
+        </section> */}
 
         <footer className="mt-10 border-t border-gray-200 py-7 text-center">
           <p className="text-xs text-gray-400">
-            Alpha Morgan Bank · Bobby Customer Support Demo
+            Alpha Morgan Bank
           </p>
-          <p className="mt-1 text-[10px] text-gray-400">
+          {/* <p className="mt-1 text-[10px] text-gray-400">
             All information displayed is fictional and for demonstration only.
-          </p>
+          </p> */}
         </footer>
       </div>
 
       {/* Fixed bottom navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200/80 bg-white/90 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 shadow-[0_-8px_30px_rgba(20,26,28,0.04)] backdrop-blur-xl">
         <div className="mx-auto grid max-w-lg grid-cols-4">
-          {navigation.map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              onClick={() => setActiveTab(item.label)}
-              className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-bold transition duration-200 ${
-                activeTab === item.label
-                  ? "scale-105 text-[#EC5424]"
-                  : "text-gray-400 hover:text-gray-700"
-              }`}
-            >
-              <span className="text-xl leading-6">{item.icon}</span>
-              {item.label}
-            </a>
-          ))}
+          {navigation.map((item) => {
+            const NavigationIcon = item.icon;
+
+            if (item.label === "Support") {
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    loadConversationHistory();
+                    setSupportOpen(true);
+                  }}
+                  className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-bold text-gray-400 transition duration-200 hover:text-gray-700"
+                >
+                  <NavigationIcon className="h-5 w-5" strokeWidth={1.8} />
+                  {item.label}
+                </button>
+              );
+            }
+
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                onClick={() => setActiveTab(item.label)}
+                aria-current={activeTab === item.label ? "page" : undefined}
+                className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-bold transition duration-200 ${
+                  activeTab === item.label
+                    ? "scale-105 text-[#EC5424]"
+                    : "text-gray-400 hover:text-gray-700"
+                }`}
+              >
+                <NavigationIcon
+                  className="h-5 w-5"
+                  strokeWidth={activeTab === item.label ? 2.5 : 1.8}
+                />
+                {item.label}
+              </a>
+            );
+          })}
         </div>
       </nav>
 
@@ -914,9 +1040,9 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setSelectedTransaction(null)}
                 aria-label="Close receipt"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg text-gray-500 transition hover:rotate-90 hover:bg-gray-200"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition hover:rotate-90 hover:bg-gray-200"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -965,9 +1091,12 @@ export default function DashboardPage() {
 
             {selectedTransaction.complaint && (
               <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                  Transaction already reported
-                </p>
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <p className="text-[10px] font-bold uppercase tracking-wider">
+                    Transaction already reported
+                  </p>
+                </div>
 
                 <p className="mt-2 break-all font-mono text-sm font-extrabold text-emerald-900">
                   {selectedTransaction.complaint.reference}
@@ -985,9 +1114,10 @@ export default function DashboardPage() {
                         selectedTransaction.complaint!.conversationId,
                       )
                     }
-                    className="mt-4 w-full rounded-xl bg-[#EC5424] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#d9471b]"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#EC5424] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#d9471b]"
                   >
-                    Continue with Bobby →
+                    Continue with Bobby
+                    <ArrowRight className="h-4 w-4" />
                   </button>
                 )}
               </div>
@@ -997,8 +1127,9 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => void shareReceipt(selectedTransaction)}
-                className="rounded-xl border border-gray-200 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
               >
+                <Share2 className="h-4 w-4" />
                 Share Receipt
               </button>
 
@@ -1006,25 +1137,27 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedTransaction(null)}
-                  className="rounded-xl bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
                 >
+                  <Check className="h-4 w-4" />
                   Already reported
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => openReport(selectedTransaction)}
-                  className="rounded-xl bg-[#EC5424] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#d9471b] active:scale-[0.98]"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#EC5424] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#d9471b] active:scale-[0.98]"
                 >
+                  <Send className="h-4 w-4" />
                   Report Transaction
                 </button>
               )}
             </div>
 
-            <p className="mt-5 text-center text-[10px] leading-5 text-gray-400">
+            {/* <p className="mt-5 text-center text-[10px] leading-5 text-gray-400">
               This is a simulated transaction receipt. It is not proof of a
               real banking transaction.
-            </p>
+            </p> */}
           </section>
         </div>
       )}
@@ -1049,8 +1182,8 @@ export default function DashboardPage() {
 
             {complaintResult ? (
               <>
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-2xl font-bold text-emerald-700">
-                  ✓
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                  <CheckCircle2 className="h-7 w-7" />
                 </div>
 
                 <p className="mt-5 text-[10px] font-extrabold tracking-[0.15em] text-emerald-700">
@@ -1114,9 +1247,10 @@ export default function DashboardPage() {
                         complaintResult.complaint.conversationId,
                       )
                     }
-                    className="mt-5 w-full rounded-xl bg-[#EC5424] px-5 py-4 text-sm font-extrabold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/15 active:translate-y-0"
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#EC5424] px-5 py-4 text-sm font-extrabold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/15 active:translate-y-0"
                   >
-                    Continue with Bobby →
+                    Continue with Bobby
+                    <ArrowRight className="h-4 w-4" />
                   </button>
                 ) : (
                   <p className="mt-5 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
@@ -1159,9 +1293,9 @@ export default function DashboardPage() {
                     onClick={closeReport}
                     disabled={submitting}
                     aria-label="Close report form"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg text-gray-500 transition hover:bg-gray-200 disabled:opacity-50"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition hover:bg-gray-200 disabled:opacity-50"
                   >
-                    ×
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -1247,9 +1381,19 @@ export default function DashboardPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full rounded-xl bg-[#EC5424] px-5 py-4 text-sm font-extrabold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/15 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#EC5424] px-5 py-4 text-sm font-extrabold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-[#d9471b] hover:shadow-lg hover:shadow-[#EC5424]/15 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {submitting ? "Submitting report..." : "Submit Report"}
+                    {submitting ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Submitting report...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        Submit Report
+                      </>
+                    )}
                   </button>
 
                   <p className="text-center text-[10px] leading-5 text-gray-400">
@@ -1267,11 +1411,296 @@ export default function DashboardPage() {
       {shareMessage && (
         <div
           role="status"
-          className="fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 animate-fade-up rounded-xl bg-[#141A1C] px-5 py-3 text-center text-xs font-semibold text-white shadow-xl"
+          className="fixed bottom-24 left-1/2 z-[70] flex -translate-x-1/2 animate-fade-up items-center gap-2 rounded-xl bg-[#141A1C] px-5 py-3 text-center text-xs font-semibold text-white shadow-xl"
         >
+          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           {shareMessage}
         </div>
       )}
+
+      {/* Support Centre modal */}
+        
+{supportOpen && (
+  <div
+    className="fixed inset-0 z-[55] flex animate-fade-up items-end justify-center bg-[#141A1C]/55 p-0 backdrop-blur-sm sm:items-center sm:p-5"
+    onMouseDown={(event) => {
+      if (event.target === event.currentTarget) {
+        setSupportOpen(false);
+      }
+    }}
+  >
+    <section
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="support-title"
+      className="max-h-[90dvh] w-full max-w-2xl animate-fade-up overflow-y-auto rounded-t-[28px] bg-white p-6 shadow-2xl sm:rounded-[28px] sm:p-8"
+    >
+      <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden" />
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FFF0E9] to-[#FCE1D6] text-[#EC5424]">
+            <Headset className="h-5 w-5" />
+          </div>
+
+          <p className="text-xs font-bold uppercase tracking-widest text-[#EC5424]">
+            Support centre
+          </p>
+
+          <h2 id="support-title" className="mt-2 text-2xl font-extrabold">
+            Your support history
+          </h2>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Access your transaction reports and previous conversations with Bobby.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSupportOpen(false)}
+          aria-label="Close support centre"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition hover:rotate-90 hover:bg-gray-200"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Submitted reports dropdown */}
+      <details className="group mt-6 overflow-hidden rounded-2xl border border-[#FCE1D6] bg-white">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-[#FFF9F6] p-4 transition hover:bg-[#FFF4EE] [&::-webkit-details-marker]:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF0E9] text-[#EC5424]">
+              <FileCheck2 className="h-5 w-5" />
+            </div>
+
+            <div>
+              <p className="text-sm font-extrabold text-gray-900">
+                Submitted reports
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Your transaction support history
+              </p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="flex h-9 min-w-9 items-center justify-center rounded-xl bg-[#FFF0E9] px-2 text-sm font-extrabold text-[#EC5424]">
+              {reportedCount}
+            </span>
+
+            <ChevronDown className="h-5 w-5 text-gray-400 transition-transform duration-200 group-open:rotate-180" />
+          </div>
+        </summary>
+
+        <div className="border-t border-gray-100 p-4">
+          {reportedCount === 0 ? (
+            <div className="rounded-2xl bg-gray-50 px-5 py-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm">
+                <FileCheck2 className="h-5 w-5" />
+              </div>
+
+              <p className="text-sm font-semibold text-gray-700">
+                No transaction reports yet
+              </p>
+
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-gray-500">
+                Use the Report Transaction button on a transaction to submit an
+                issue. Your reports will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {transactions
+                .filter((item) => item.complaint)
+                .map((transaction) => (
+                  <div
+                    key={transaction.reference}
+                    className="rounded-2xl border border-gray-100 p-4 transition duration-200 hover:border-gray-200 hover:bg-gray-50/50"
+                  >
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold">
+                          {transaction.complaint!.subject}
+                        </p>
+
+                        <p className="mt-1 font-mono text-[10px] text-gray-400">
+                          {transaction.complaint!.reference}
+                        </p>
+
+                        <p className="mt-2 text-xs text-gray-500">
+                          {transaction.description}
+                        </p>
+
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Submitted{" "}
+                          {formatDate(transaction.complaint!.createdAt)}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`inline-flex w-fit shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold ${statusStyle(transaction.complaint!.status)}`}
+                      >
+                        {displayStatus(transaction.complaint!.status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupportOpen(false);
+                          setSelectedTransaction(transaction);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                      >
+                        <ReceiptText className="h-3.5 w-3.5" />
+                        View details
+                      </button>
+
+                      {transaction.complaint!.conversationId && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            continueWithBobby(
+                              transaction.complaint!.conversationId,
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-[#EC5424] px-3 py-2 text-xs font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#d9471b] active:translate-y-0"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          Continue conversation
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      </details>
+
+      {/* Bobby conversations dropdown */}
+      <details className="group mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-gray-50 p-4 transition hover:bg-gray-100 [&::-webkit-details-marker]:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF0E9] text-[#EC5424]">
+              <MessageCircle className="h-5 w-5" />
+            </div>
+
+            <div>
+              <p className="text-sm font-extrabold text-gray-900">
+                Bobby conversations
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Your previous chats with our virtual assistant
+              </p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="flex h-9 min-w-9 items-center justify-center rounded-xl bg-[#FFF0E9] px-2 text-sm font-extrabold text-[#EC5424]">
+              {savedConversations.length}
+            </span>
+
+            <ChevronDown className="h-5 w-5 text-gray-400 transition-transform duration-200 group-open:rotate-180" />
+          </div>
+        </summary>
+
+        <div className="border-t border-gray-100 p-4">
+          {loadingConversations ? (
+            <div className="flex items-center justify-center gap-2 rounded-2xl bg-gray-50 px-5 py-8 text-xs text-gray-500">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Loading conversations...
+            </div>
+          ) : savedConversations.length === 0 ? (
+            <div className="rounded-2xl bg-gray-50 px-5 py-8 text-center">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+
+              <p className="text-sm font-semibold text-gray-700">
+                No Bobby conversations yet
+              </p>
+
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-gray-500">
+                Conversations you start using Chat now will appear here so you can
+                return to them later.
+              </p>
+
+              <Link
+                href="/?newChat=1"
+                onClick={() => setSupportOpen(false)}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#EC5424] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#d9471b]"
+              >
+                Start a conversation
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {savedConversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className="rounded-2xl border border-gray-100 p-4 transition duration-200 hover:border-gray-200 hover:bg-gray-50/50"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF0E9] text-[#EC5424]">
+                      <MessageCircle className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm font-bold text-gray-800">
+                        {conversation.title || "Bobby conversation"}
+                      </p>
+
+                      <p className="mt-1 text-[10px] text-gray-400">
+                        Last activity: {formatDate(conversation.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => continueWithBobby(conversation.id)}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#EC5424] px-3 py-2 text-xs font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#d9471b] active:translate-y-0"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Continue conversation
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
+
+      {/* Response target notice */}
+      <div className="mt-5 rounded-xl border border-amber-100 bg-amber-50 p-4">
+        <p className="text-xs leading-5 text-amber-800">
+          For reports referred for specialist support, the expected response
+          target is within 48 hours. This is a response target, not a
+          guarantee of resolution. This demonstration does not contact a
+          real bank or initiate an investigation.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setSupportOpen(false)}
+        className="mt-5 w-full rounded-xl border border-gray-200 px-5 py-3 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
+      >
+        Close support centre
+      </button>
+    </section>
+  </div>
+)}
+
     </main>
   );
 }

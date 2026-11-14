@@ -4,6 +4,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { generateEmbedding } from "../services/embeddings.js";
 import {
+  evaluateHumanHandoff,
   generateBankingAnswer,
   generateConversationalResponse,
 } from "../services/gemini.js";
@@ -35,8 +36,11 @@ interface KnowledgeDocument {
   similarity: number;
 }
 
-
-
+const ACTIVE_HANDOFF_STATUSES = [
+  "PENDING",
+  "ASSIGNED",
+  "IN_PROGRESS",
+] as const;
 
 function isConversationalMessage(message: string): boolean {
   const normalize = (value: string) =>
@@ -109,11 +113,8 @@ function isConversationalMessage(message: string): boolean {
       (pattern) =>
         pattern.test(segment) || pattern.test(withoutGreeting)
     );
-
-
   });
 }
-
 
 function isHumanSupportRequest(message: string): boolean {
   const normalized = message.toLowerCase();
@@ -132,15 +133,21 @@ function isHumanSupportRequest(message: string): boolean {
 
 async function createHumanSupportReferral(
   conversationId: string,
-  reason: string
+  reason: string,
+  source:
+    | "AI_DECISION"
+    | "CUSTOMER_REQUEST"
+    | "KNOWLEDGE_GAP"
+    | "COMPLAINT"
+    | "OTHER"
 ) {
   return prisma.$transaction(async (tx) => {
-    // Reuse an existing active escalation instead of creating duplicates.
-    const existingEscalation = await tx.escalation.findFirst({
+    // Reuse an existing active handoff where possible.
+    const existingHandoff = await tx.humanHandoff.findFirst({
       where: {
         conversationId,
         status: {
-          in: ["PENDING", "ASSIGNED", "IN_PROGRESS"],
+          in: [...ACTIVE_HANDOFF_STATUSES],
         },
       },
       orderBy: {
@@ -148,53 +155,76 @@ async function createHumanSupportReferral(
       },
     });
 
-    const escalation =
-      existingEscalation ??
-      (await tx.escalation.create({
+    const handoff =
+      existingHandoff ??
+      (await tx.humanHandoff.create({
         data: {
           conversationId,
           reason,
+          source,
           status: "PENDING",
         },
       }));
 
-    const assistantMessage = await tx.message.create({
-      data: {
-        conversationId,
-        role: "ASSISTANT",
-        content: existingEscalation
-          ? `Your issue already has an active referral to our customer support team.
+    // Knowledge gaps remain visible in the existing Escalations page.
+    let escalation = null;
 
-Your escalation is currently ${escalation.status.toLowerCase().replace("_", " ")}.
+    if (source === "KNOWLEDGE_GAP") {
+      const existingEscalation = await tx.escalation.findFirst({
+        where: {
+          conversationId,
+          status: {
+            in: [...ACTIVE_HANDOFF_STATUSES],
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
 
-The expected response target is within 48 hours. This is a response target, not a guarantee that the issue will be resolved within that period.`
-          : `I've successfully referred your issue to our customer support team.
+      escalation =
+        existingEscalation ??
+        (await tx.escalation.create({
+          data: {
+            conversationId,
+            reason,
+            status: "PENDING",
+          },
+        }));
+    }
 
-Your support escalation has been created successfully.
+    // Do not create duplicate acknowledgments for an existing handoff.
+    const assistantMessage = existingHandoff
+      ? null
+      : await tx.message.create({
+          data: {
+            conversationId,
+            role: "ASSISTANT",
+            content: `I've referred this conversation to our human support team.
 
-Reference ID: ${escalation.id}
+Reference ID: ${handoff.id}
 
-The expected response target is within 48 hours. This is a response target, not a guarantee that the issue will be resolved within that period.
-
-You can continue this conversation while awaiting a response.`,
-      },
-    });
+A representative will be able to review your conversation and respond here. You can continue sending messages while you wait.`,
+          },
+        });
 
     await tx.conversation.update({
       where: { id: conversationId },
-      data: { updatedAt: new Date() },
+      data: {
+        updatedAt: new Date(),
+      },
     });
 
     return {
+      handoff,
       escalation,
       assistantMessage,
     };
   });
 }
 
-
 const conversationRoutes: FastifyPluginAsync = async (app) => {
-  // Create a conversation
+  // Create a conversation.
   app.post<{ Body: CreateConversationBody }>(
     "/conversations",
     {
@@ -229,9 +259,9 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
 
       const conversation = await prisma.conversation.create({
         data: {
-            ...(customerId ? { customerId } : {}),
-            ...(title ? { title } : {}),
-            channel: channel ?? "WEB",
+          ...(customerId ? { customerId } : {}),
+          ...(title ? { title } : {}),
+          channel: channel ?? "WEB",
         },
       });
 
@@ -242,80 +272,79 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-
-  // List conversations for the admin dashboard
-    app.get<{ Querystring: ListConversationsQuery }>(
-        "/conversations",
-        {
-        schema: {
-            querystring: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-                page: { type: "string", pattern: "^[1-9][0-9]*$" },
-                limit: { type: "string", pattern: "^[1-9][0-9]*$" },
-            },
-            },
+  // List conversations for the admin dashboard.
+  app.get<{ Querystring: ListConversationsQuery }>(
+    "/conversations",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            page: { type: "string", pattern: "^[1-9][0-9]*$" },
+            limit: { type: "string", pattern: "^[1-9][0-9]*$" },
+          },
         },
+      },
+    },
+    async (request) => {
+      const page = Math.max(1, Number(request.query.page ?? 1));
+      const limit = Math.min(
+        50,
+        Math.max(1, Number(request.query.limit ?? 10))
+      );
+
+      const skip = (page - 1) * limit;
+
+      const [conversations, total] = await Promise.all([
+        prisma.conversation.findMany({
+          orderBy: { updatedAt: "desc" },
+          skip,
+          take: limit,
+          include: {
+            customer: {
+              select: {
+                firstName: true,
+                lastName: true,
+                customerRef: true,
+                segment: true,
+              },
+            },
+            messages: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: {
+                role: true,
+                content: true,
+                createdAt: true,
+              },
+            },
+            _count: {
+              select: {
+                messages: true,
+                escalations: true,
+                humanHandoffs: true,
+              },
+            },
+          },
+        }),
+        prisma.conversation.count(),
+      ]);
+
+      return {
+        success: true,
+        conversations,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
         },
-        async (request) => {
-        const page = Math.max(1, Number(request.query.page ?? 1));
-        const limit = Math.min(
-            50,
-            Math.max(1, Number(request.query.limit ?? 10))
-        );
+      };
+    }
+  );
 
-        const skip = (page - 1) * limit;
-
-        const [conversations, total] = await Promise.all([
-            prisma.conversation.findMany({
-            orderBy: { updatedAt: "desc" },
-            skip,
-            take: limit,
-            include: {
-                customer: {
-                select: {
-                    firstName: true,
-                    lastName: true,
-                    customerRef: true,
-                    segment: true,
-                },
-                },
-                messages: {
-                orderBy: { createdAt: "desc" },
-                take: 1,
-                select: {
-                    role: true,
-                    content: true,
-                    createdAt: true,
-                },
-                },
-                _count: {
-                select: {
-                    messages: true,
-                    escalations: true,
-                },
-                },
-            },
-            }),
-            prisma.conversation.count(),
-        ]);
-
-        return {
-            success: true,
-            conversations,
-            pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-            },
-        };
-        }
-    );
-
-
-  // Retrieve a conversation and its message history
+  // Retrieve a conversation and its message history.
   app.get<{ Params: ConversationParams }>(
     "/conversations/:id",
     async (request, reply) => {
@@ -327,6 +356,9 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
             take: 100,
           },
           escalations: {
+            orderBy: { createdAt: "desc" },
+          },
+          humanHandoffs: {
             orderBy: { createdAt: "desc" },
           },
         },
@@ -346,7 +378,7 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  // Save customer message, retrieve knowledge and generate Bobby's response
+  // Save customer message, retrieve knowledge and generate Bobby's response.
   app.post<{
     Params: ConversationParams;
     Body: CreateMessageBody;
@@ -400,7 +432,7 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
-      // 1. Save the customer's message
+      // 1. Save the customer's message.
       const userMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -411,53 +443,74 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
 
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { updatedAt: new Date() },
+        data: {
+          updatedAt: new Date(),
+        },
       });
 
-      
-      
       try {
-        // 2. Handle requests for human support.
+        // 2. Handle explicit requests for human support.
         if (isHumanSupportRequest(content)) {
           const referral = await createHumanSupportReferral(
             conversation.id,
-            `Customer requested human support: ${content}`
+            `Customer requested human support: ${content}`,
+            "CUSTOMER_REQUEST"
           );
 
           request.log.info(
             {
               conversationId: conversation.id,
-              escalationId: referral.escalation.id,
+              handoffId: referral.handoff.id,
             },
-            "Human support escalation created or reused"
+            "Human support handoff created or reused"
           );
 
           return reply.code(201).send({
             success: true,
             userMessage,
             assistantMessage: referral.assistantMessage,
+            handoff: referral.handoff,
+            handoffActive: true,
             escalation: referral.escalation,
             sources: [],
           });
         }
 
-        // 3. Handle ordinary conversation without knowledge retrieval.
-                // 3. If a human support escalation is active,
-        // save the customer's message without generating a Bobby response.
-        const activeEscalation = await prisma.escalation.findFirst({
+        // 3. Check whether a human handoff is already active.
+        const activeHandoff = await prisma.humanHandoff.findFirst({
           where: {
             conversationId: conversation.id,
             status: {
-              in: ["PENDING", "ASSIGNED", "IN_PROGRESS"],
+              in: [...ACTIVE_HANDOFF_STATUSES],
             },
           },
           orderBy: {
             createdAt: "desc",
           },
-          select: {
-            id: true,
-            status: true,
-            assignedTo: true,
+        });
+
+        if (activeHandoff) {
+          return reply.code(201).send({
+            success: true,
+            userMessage,
+            assistantMessage: null,
+            handoffActive: true,
+            handoff: activeHandoff,
+            sources: [],
+          });
+        }
+
+        // Preserve compatibility with older knowledge-gap escalations
+        // created before the HumanHandoff model was introduced.
+        const activeEscalation = await prisma.escalation.findFirst({
+          where: {
+            conversationId: conversation.id,
+            status: {
+              in: [...ACTIVE_HANDOFF_STATUSES],
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
           },
         });
 
@@ -480,10 +533,68 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
             sources: [],
           });
         }
-        
-        if (isConversationalMessage(content)) {
 
+        // 4. Handle ordinary conversation without knowledge retrieval.
+        if (isConversationalMessage(content)) {
           const answer = await generateConversationalResponse(content);
+
+          const handoffDecision = await evaluateHumanHandoff(
+            content,
+            answer
+          );
+
+          if (handoffDecision.needsHumanSupport) {
+            const referral = await createHumanSupportReferral(
+              conversation.id,
+              handoffDecision.reason ||
+                "Bobby determined that this conversation requires human assistance.",
+              "AI_DECISION"
+            );
+
+            request.log.info(
+              {
+                conversationId: conversation.id,
+                handoffId: referral.handoff.id,
+                source: "AI_DECISION",
+              },
+              "Conversational message referred to human support"
+            );
+
+            return reply.code(201).send({
+              success: true,
+              userMessage,
+              assistantMessage: referral.assistantMessage,
+              handoff: referral.handoff,
+              handoffActive: true,
+              sources: [],
+            });
+          }
+
+          // Check again in case another process created a handoff
+          // while Bobby was generating or evaluating the response.
+          const concurrentHandoff =
+            await prisma.humanHandoff.findFirst({
+              where: {
+                conversationId: conversation.id,
+                status: {
+                  in: [...ACTIVE_HANDOFF_STATUSES],
+                },
+              },
+              orderBy: {
+                createdAt: "desc",
+              },
+            });
+
+          if (concurrentHandoff) {
+            return reply.code(201).send({
+              success: true,
+              userMessage,
+              assistantMessage: null,
+              handoffActive: true,
+              handoff: concurrentHandoff,
+              sources: [],
+            });
+          }
 
           const assistantMessage = await prisma.message.create({
             data: {
@@ -495,13 +606,16 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
 
           await prisma.conversation.update({
             where: { id: conversation.id },
-            data: { updatedAt: new Date() },
+            data: {
+              updatedAt: new Date(),
+            },
           });
 
           request.log.info(
             {
               conversationId: conversation.id,
               responseType: "conversation",
+              handoffRequired: false,
             },
             "Conversational response generated"
           );
@@ -510,17 +624,16 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
             success: true,
             userMessage,
             assistantMessage,
+            handoffActive: false,
             sources: [],
           });
         }
 
-        // 3. Banking enquiry: generate an embedding
+        // 5. Banking enquiry: generate an embedding.
         const embedding = await generateEmbedding(content);
-
-
         const vector = `[${embedding.join(",")}]`;
 
-        // 3. Retrieve relevant approved banking documents
+        // 6. Retrieve relevant approved banking documents.
         const documents = await prisma.$queryRaw<KnowledgeDocument[]>`
           SELECT *
           FROM match_knowledge_documents(
@@ -538,39 +651,100 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
           "Knowledge retrieval completed"
         );
 
-
-        // 4. No approved knowledge found: refer to human support.
+        // 7. No approved knowledge found: refer to human support.
         if (documents.length === 0) {
           const referral = await createHumanSupportReferral(
             conversation.id,
-            `Bobby could not find sufficient approved banking information to answer: ${content}`
+            `Bobby could not find sufficient approved banking information to answer: ${content}`,
+            "KNOWLEDGE_GAP"
           );
 
           request.log.info(
             {
               conversationId: conversation.id,
-              escalationId: referral.escalation.id,
+              handoffId: referral.handoff.id,
+              escalationId: referral.escalation?.id,
             },
-            "Knowledge-base fallback escalated to human support"
+            "Knowledge gap referred to human support"
           );
 
           return reply.code(201).send({
             success: true,
             userMessage,
             assistantMessage: referral.assistantMessage,
+            handoff: referral.handoff,
+            handoffActive: true,
             escalation: referral.escalation,
             sources: [],
           });
         }
 
+        // 8. Generate Bobby's banking response using approved documents.
+        const answer = await generateBankingAnswer(content, documents);
 
-        // 4. Generate Bobby's response using Gemini
-        const answer = await generateBankingAnswer(
+        // 9. Evaluate whether the banking enquiry needs human intervention.
+        const handoffDecision = await evaluateHumanHandoff(
           content,
-          documents
+          answer
         );
 
-        // 5. Save Bobby's response
+        if (handoffDecision.needsHumanSupport) {
+          const referral = await createHumanSupportReferral(
+            conversation.id,
+            handoffDecision.reason ||
+              "Bobby determined that this banking enquiry requires human assistance.",
+            "AI_DECISION"
+          );
+
+          request.log.info(
+            {
+              conversationId: conversation.id,
+              handoffId: referral.handoff.id,
+              source: "AI_DECISION",
+            },
+            "Banking enquiry referred to human support"
+          );
+
+          return reply.code(201).send({
+            success: true,
+            userMessage,
+            assistantMessage: referral.assistantMessage,
+            handoff: referral.handoff,
+            handoffActive: true,
+            sources: documents.map((document) => ({
+              id: document.id,
+              title: document.title,
+              category: document.category,
+              similarity: document.similarity,
+            })),
+          });
+        }
+
+        // Check whether a representative took over while AI was processing.
+        const concurrentHandoff = await prisma.humanHandoff.findFirst({
+          where: {
+            conversationId: conversation.id,
+            status: {
+              in: [...ACTIVE_HANDOFF_STATUSES],
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+
+        if (concurrentHandoff) {
+          return reply.code(201).send({
+            success: true,
+            userMessage,
+            assistantMessage: null,
+            handoffActive: true,
+            handoff: concurrentHandoff,
+            sources: [],
+          });
+        }
+
+        // 10. Save Bobby's response normally.
         const assistantMessage = await prisma.message.create({
           data: {
             conversationId: conversation.id,
@@ -581,14 +755,16 @@ const conversationRoutes: FastifyPluginAsync = async (app) => {
 
         await prisma.conversation.update({
           where: { id: conversation.id },
-          data: { updatedAt: new Date() },
+          data: {
+            updatedAt: new Date(),
+          },
         });
 
-        // 6. Return the complete response
         return reply.code(201).send({
           success: true,
           userMessage,
           assistantMessage,
+          handoffActive: false,
           sources: documents.map((document) => ({
             id: document.id,
             title: document.title,

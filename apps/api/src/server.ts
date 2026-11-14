@@ -9,6 +9,7 @@ import knowledgeRoutes from "./routes/knowledge.js";
 import complaintRoutes from "./routes/complaints.js";
 import escalationRoutes from "./routes/escalations.js";
 import demoRoutes from "./routes/demo.js";
+import humanHandoffRoutes from "./routes/human-handoffs.js";
 
 const port = Number(process.env.PORT || 4000);
 const host = "0.0.0.0";
@@ -51,6 +52,7 @@ async function start() {
     await app.register(complaintRoutes, { prefix: "/api" });
     await app.register(escalationRoutes, { prefix: "/api" });
     await app.register(demoRoutes, { prefix: "/api" });
+    await app.register(humanHandoffRoutes, { prefix: "/api" });
 
     // API health check.
     app.get("/health", async () => ({

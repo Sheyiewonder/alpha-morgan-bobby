@@ -98,7 +98,7 @@ const demoRoutes: FastifyPluginAsync = async (app) => {
       balance: {
         amount: SIMULATED_BALANCE,
         currency: "NGN",
-        label: "Simulated balance",
+        label: "Account balance",
       },
       transactions: customer.transactions.map((transaction) => ({
         ...transaction,

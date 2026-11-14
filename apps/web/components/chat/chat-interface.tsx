@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -44,6 +45,48 @@ type ConversationResponse = {
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
 ).replace(/\/$/, "");
+
+const CONVERSATION_HISTORY_KEY = "bobby_conversation_history";
+
+type ConversationHistoryItem = {
+  id: string;
+  title: string;
+  updatedAt: string;
+};
+
+function saveConversationToHistory(
+  id: string,
+  title = "Bobby conversation"
+) {
+  try {
+    const existing: ConversationHistoryItem[] = JSON.parse(
+      localStorage.getItem(CONVERSATION_HISTORY_KEY) || "[]"
+    );
+
+    const existingConversation = existing.find(
+      (item) => item.id === id
+    );
+
+    const updated = [
+      {
+        id,
+        title:
+          title === "Bobby conversation" && existingConversation
+            ? existingConversation.title
+            : title,
+        updatedAt: new Date().toISOString(),
+      },
+      ...existing.filter((item) => item.id !== id),
+    ];
+
+    localStorage.setItem(
+      CONVERSATION_HISTORY_KEY,
+      JSON.stringify(updated)
+    );
+  } catch {
+    console.error("Unable to save conversation history.");
+  }
+}
 
 const suggestions = [
   "What documents do I need to open a bank account?",
@@ -171,6 +214,8 @@ export default function ChatInterface() {
     setConversationId(id);
     localStorage.setItem("bobby_conversation_id", id);
 
+    saveConversationToHistory(id);
+
     return id;
   }, []);
 
@@ -180,15 +225,32 @@ export default function ChatInterface() {
 
     async function initialize() {
       try {
-        const requestedId = new URLSearchParams(
+        const searchParams = new URLSearchParams(
           window.location.search
-        ).get("conversationId");
+        );
+
+        const requestedId = searchParams.get("conversationId");
+
+        const startNewChat = searchParams.get("newChat") === "1";
 
         const savedId = localStorage.getItem(
           "bobby_conversation_id"
         );
 
-        const conversationToLoad = requestedId || savedId;
+        // A new chat should not restore the previous conversation.
+        if (startNewChat) {
+          window.history.replaceState(
+            {},
+            "",
+            window.location.pathname
+          );
+
+          localStorage.removeItem("bobby_conversation_id");
+        }
+
+        const conversationToLoad = startNewChat
+          ? null
+          : requestedId || savedId;
 
         if (conversationToLoad) {
           try {
@@ -200,6 +262,7 @@ export default function ChatInterface() {
 
             setConversationId(data.conversation.id);
             setMessages(data.conversation.messages || []);
+
             setActiveEscalation(
               getActiveEscalation(data.conversation.escalations)
             );
@@ -207,6 +270,18 @@ export default function ChatInterface() {
             localStorage.setItem(
               "bobby_conversation_id",
               data.conversation.id
+            );
+
+            // Save the restored conversation to local history.
+            const firstUserMessage =
+              data.conversation.messages?.find(
+                (message) => message.role === "USER"
+              );
+
+            saveConversationToHistory(
+              data.conversation.id,
+              firstUserMessage?.content?.slice(0, 60) ||
+                "Bobby conversation"
             );
           } catch {
             if (requestedId) {
@@ -325,6 +400,17 @@ export default function ChatInterface() {
           method: "POST",
           body: JSON.stringify({ content }),
         }
+      );
+
+      // Use the first customer message as the conversation title.
+      const firstUserMessage =
+        messages.find((message) => message.role === "USER");
+
+      saveConversationToHistory(
+        activeConversationId,
+        firstUserMessage?.content?.slice(0, 60) ||
+          content.slice(0, 60) ||
+          "Bobby conversation"
       );
 
       const newMessages = [

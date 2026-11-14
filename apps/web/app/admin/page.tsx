@@ -1,5 +1,18 @@
 
 import Link from "next/link";
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  CircleAlert,
+  Headset,
+  MessageCircle,
+  MessagesSquare,
+  Users,
+} from "lucide-react";
 
 const stats = [
   {
@@ -8,7 +21,7 @@ const stats = [
     change: "+12.8%",
     detail: "vs. previous period",
     color: "bg-orange-50 text-[#EC5424]",
-    icon: "💬",
+    icon: MessagesSquare,
   },
   {
     label: "Resolved conversations",
@@ -16,7 +29,7 @@ const stats = [
     change: "87.7%",
     detail: "resolution rate",
     color: "bg-emerald-50 text-emerald-700",
-    icon: "✓",
+    icon: CheckCircle2,
   },
   {
     label: "Open complaints",
@@ -24,15 +37,15 @@ const stats = [
     change: "Needs attention",
     detail: "awaiting resolution",
     color: "bg-amber-50 text-amber-700",
-    icon: "!",
+    icon: CircleAlert,
   },
   {
-    label: "Human escalations",
+    label: "Human handoffs",
     value: "07",
     change: "Pending review",
     detail: "support handover",
     color: "bg-blue-50 text-blue-700",
-    icon: "↗",
+    icon: Headset,
   },
 ];
 
@@ -72,25 +85,31 @@ const quickLinks = [
     title: "Knowledge Base",
     description: "Manage banking FAQs and documents.",
     href: "/admin/knowledge-base",
-    icon: "📚",
+    icon: BookOpen,
   },
   {
     title: "Conversations",
     description: "Review customer interactions with Bobby.",
     href: "/admin/conversations",
-    icon: "💬",
+    icon: MessageCircle,
   },
   {
     title: "Complaints",
     description: "Track and manage customer complaints.",
     href: "/admin/complaints",
-    icon: "📋",
+    icon: CircleAlert,
   },
   {
     title: "Escalations",
-    description: "Review requests requiring human support.",
+    description: "Review knowledge-base gaps and AI escalations.",
     href: "/admin/escalations",
-    icon: "👥",
+    icon: ArrowUpRight,
+  },
+  {
+    title: "Human Handoffs",
+    description: "Manage conversations referred to human representatives.",
+    href: "/admin/human-handoffs",
+    icon: Users,
   },
 ];
 
@@ -102,7 +121,9 @@ function StatusBadge({ status }: { status: string }) {
   };
 
   return (
-    <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${styles[status]}`}>
+    <span
+      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${styles[status] ?? "bg-gray-100 text-gray-600"}`}
+    >
       {status}
     </span>
   );
@@ -110,7 +131,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function AdminDashboard() {
   return (
-    <div className="space-y-8 animate-fade-up">
+    <div className="animate-fade-up space-y-8">
       <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#EC5424]">
@@ -124,30 +145,43 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        <span className="w-fit rounded-full border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-semibold text-[#EC5424]">
-          DEMO DATA · NOT LIVE ANALYTICS
+        <span className="flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-semibold text-[#EC5424]">
+          <Activity size={13} />
+          ANALYTICS
         </span>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-2xl border border-[#EAEAEA] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-          >
-            <div className="flex items-start justify-between">
-              <p className="text-sm text-[#737373]">{stat.label}</p>
-              <span className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold ${stat.color}`}>
-                {stat.icon}
-              </span>
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+
+          return (
+            <div
+              key={stat.label}
+              className="rounded-2xl border border-[#EAEAEA] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+            >
+              <div className="flex items-start justify-between">
+                <p className="text-sm text-[#737373]">{stat.label}</p>
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${stat.color}`}
+                >
+                  <Icon size={19} strokeWidth={2} />
+                </span>
+              </div>
+
+              <p className="mt-5 text-3xl font-bold tracking-tight">
+                {stat.value}
+              </p>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-[#EC5424]">
+                  {stat.change}
+                </span>
+                <span className="text-[#929292]">{stat.detail}</span>
+              </div>
             </div>
-            <p className="mt-5 text-3xl font-bold tracking-tight">{stat.value}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-semibold text-[#EC5424]">{stat.change}</span>
-              <span className="text-[#929292]">{stat.detail}</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
@@ -159,11 +193,13 @@ export default function AdminDashboard() {
                 Sample customer interactions
               </p>
             </div>
+
             <Link
               href="/admin/conversations"
-              className="text-xs font-semibold text-[#EC5424] hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#EC5424] hover:underline"
             >
-              View all →
+              View all
+              <ArrowRight size={14} />
             </Link>
           </div>
 
@@ -176,15 +212,21 @@ export default function AdminDashboard() {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FCE5DC] text-xs font-bold text-[#EC5424]">
                   {conversation.initials}
                 </div>
+
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{conversation.name}</p>
+                  <p className="truncate text-sm font-semibold">
+                    {conversation.name}
+                  </p>
                   <p className="mt-1 truncate text-xs text-[#929292]">
                     {conversation.question}
                   </p>
                 </div>
+
                 <div className="hidden shrink-0 text-right sm:block">
                   <StatusBadge status={conversation.status} />
-                  <p className="mt-2 text-[10px] text-[#A0A0A0]">{conversation.time}</p>
+                  <p className="mt-2 text-[10px] text-[#A0A0A0]">
+                    {conversation.time}
+                  </p>
                 </div>
               </div>
             ))}
@@ -206,7 +248,10 @@ export default function AdminDashboard() {
               ["Database connection", "Connected"],
               ["Human support queue", "Available"],
             ].map(([label, status]) => (
-              <div key={label} className="flex items-center justify-between gap-3">
+              <div
+                key={label}
+                className="flex items-center justify-between gap-3"
+              >
                 <span className="text-sm text-[#555]">{label}</span>
                 <span className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -217,16 +262,22 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mt-7 rounded-xl bg-[#141A1C] p-5 text-white">
-            <p className="text-xs font-medium text-white/50">Meet your AI assistant</p>
-            <h4 className="mt-2 text-xl font-bold">Bobby is ready to help.</h4>
+            <p className="text-xs font-medium text-white/50">
+              Meet your AI assistant
+            </p>
+            <h4 className="mt-2 text-xl font-bold">
+              Bobby is ready to help.
+            </h4>
             <p className="mt-2 text-xs leading-relaxed text-white/60">
               Experience the customer-facing chatbot and test its banking knowledge.
             </p>
+
             <Link
               href="/"
-              className="mt-5 inline-flex rounded-lg bg-[#EC5424] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#d94719]"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#EC5424] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#d94719]"
             >
-              Open chatbot →
+              Open chatbot
+              <ArrowUpRight size={14} />
             </Link>
           </div>
         </div>
@@ -241,26 +292,37 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {quickLinks.map((item) => (
-            <Link
-              key={item.title}
-              href={item.href}
-              className="group rounded-2xl border border-[#EAEAEA] bg-white p-5 transition hover:-translate-y-1 hover:border-[#EC5424]/40 hover:shadow-md"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FCE5DC] text-xl">
-                {item.icon}
-              </span>
-              <h4 className="mt-4 text-sm font-bold group-hover:text-[#EC5424]">
-                {item.title}
-              </h4>
-              <p className="mt-2 text-xs leading-relaxed text-[#929292]">
-                {item.description}
-              </p>
-              <p className="mt-4 text-xs font-semibold text-[#EC5424]">
-                Open section →
-              </p>
-            </Link>
-          ))}
+          {quickLinks.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.title}
+                href={item.href}
+                className="group rounded-2xl border border-[#EAEAEA] bg-white p-5 transition hover:-translate-y-1 hover:border-[#EC5424]/40 hover:shadow-md"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FCE5DC] text-[#EC5424]">
+                  <Icon size={21} strokeWidth={1.9} />
+                </span>
+
+                <h4 className="mt-4 text-sm font-bold group-hover:text-[#EC5424]">
+                  {item.title}
+                </h4>
+
+                <p className="mt-2 text-xs leading-relaxed text-[#929292]">
+                  {item.description}
+                </p>
+
+                <p className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#EC5424]">
+                  Open section
+                  <ArrowRight
+                    size={13}
+                    className="transition-transform group-hover:translate-x-1"
+                  />
+                </p>
+              </Link>
+            );
+          })}
         </div>
       </section>
     </div>
